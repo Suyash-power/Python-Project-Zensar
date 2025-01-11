@@ -1,0 +1,94 @@
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+
+# Initialize the Flask application and configure the database
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///appointments.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# Define Appointment model
+class Appointment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False)
+    date = db.Column(db.String(50), nullable=False)
+    time = db.Column(db.String(50), nullable=False)
+    description = db.Column(db.String(100), nullable=True)
+
+    def __repr__(self):
+        return f'<Appointment {self.name} on {self.date} at {self.time}>'
+
+# Initialize the database
+@app.before_first_request
+def create_tables():
+    db.create_all()
+
+# Route to get all appointments
+@app.route('/appointments', methods=['GET'])
+def get_appointments():
+    appointments = Appointment.query.all()
+    return jsonify([{
+        'id': appt.id,
+        'name': appt.name,
+        'date': appt.date,
+        'time': appt.time,
+        'description': appt.description
+    } for appt in appointments])
+
+# Route to schedule an appointment
+@app.route('/appointments', methods=['POST'])
+def schedule_appointment():
+    data = request.get_json()
+
+    # Basic validation
+    if not data or not data.get('name') or not data.get('date') or not data.get('time'):
+        return jsonify({'message': 'Missing data'}), 400
+
+    # Check if the appointment time is available
+    existing_appt = Appointment.query.filter_by(date=data['date'], time=data['time']).first()
+    if existing_appt:
+        return jsonify({'message': 'The selected time slot is already taken'}), 400
+
+    # Create a new appointment
+    new_appointment = Appointment(
+        name=data['name'],
+        date=data['date'],
+        time=data['time'],
+        description=data.get('description', '')
+    )
+
+    db.session.add(new_appointment)
+    db.session.commit()
+
+    return jsonify({
+        'id': new_appointment.id,
+        'name': new_appointment.name,
+        'date': new_appointment.date,
+        'time': new_appointment.time,
+        'description': new_appointment.description
+    }), 201
+
+# Route to get a specific appointment by ID
+@app.route('/appointments/<int:id>', methods=['GET'])
+def get_appointment(id):
+    appointment = Appointment.query.get_or_404(id)
+    return jsonify({
+        'id': appointment.id,
+        'name': appointment.name,
+        'date': appointment.date,
+        'time': appointment.time,
+        'description': appointment.description
+    })
+
+# Route to delete an appointment
+@app.route('/appointments/<int:id>', methods=['DELETE'])
+def delete_appointment(id):
+    appointment = Appointment.query.get_or_404(id)
+    db.session.delete(appointment)
+    db.session.commit()
+    return jsonify({'message': 'Appointment deleted successfully'})
+
+# Run the Flask app
+if __name__ == '__main__':
+    app.run(debug=True)
